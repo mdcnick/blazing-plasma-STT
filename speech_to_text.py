@@ -4,6 +4,7 @@ Speech-to-Text Application for Arch Linux
 Triggered by keyboard shortcut, inserts transcribed text at cursor position.
 """
 
+import argparse
 import os
 import sys
 import json
@@ -33,13 +34,141 @@ except ImportError:
     sys.exit(1)
 
 
+# Global flags from command line
+DAEMON_MODE = False
+
+
+def load_config():
+    """Load configuration from external JSON file."""
+    # Config file locations (in priority order)
+    config_paths = [
+        Path.home() / ".config" / "speech-to-text" / "config.json",
+        Path(__file__).parent / "config.json",
+    ]
+    
+    for config_path in config_paths:
+        if config_path.exists():
+            try:
+                with open(config_path) as f:
+                    return json.load(f), config_path
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"Warning: Failed to load {config_path}: {e}")
+    
+    return None, None
+
+
+def parse_hotkey(hotkey_config):
+    """Parse hotkey configuration into pynput key set."""
+    if hotkey_config is None:
+        # Default: Ctrl+Shift+Space
+        return {keyboard.Key.ctrl, keyboard.Key.shift, keyboard.Key.space}
+    
+    keys = set()
+    modifiers = hotkey_config.get("modifiers", [])
+    key = hotkey_config.get("key", "space")
+    
+    modifier_map = {
+        "ctrl": keyboard.Key.ctrl,
+        "control": keyboard.Key.ctrl,
+        "alt": keyboard.Key.alt,
+        "shift": keyboard.Key.shift,
+        "super": keyboard.Key.cmd,
+        "meta": keyboard.Key.cmd,
+        "cmd": keyboard.Key.cmd,
+    }
+    
+    for mod in modifiers:
+        mod_lower = mod.lower()
+        if mod_lower in modifier_map:
+            keys.add(modifier_map[mod_lower])
+    
+    # Handle the main key
+    key_lower = key.lower()
+    special_keys = {
+        "space": keyboard.Key.space,
+        "enter": keyboard.Key.enter,
+        "tab": keyboard.Key.tab,
+        "escape": keyboard.Key.esc,
+        "esc": keyboard.Key.esc,
+    }
+    
+    if key_lower in special_keys:
+        keys.add(special_keys[key_lower])
+    elif len(key) == 1:
+        keys.add(keyboard.KeyCode.from_char(key.lower()))
+    else:
+        # Try as function key (F1-F12)
+        if key_lower.startswith('f') and key_lower[1:].isdigit():
+            fkey = getattr(keyboard.Key, key_lower, None)
+            if fkey:
+                keys.add(fkey)
+    
+    return keys
+
+
+def format_hotkey(hotkey_config):
+    """Format hotkey config as human-readable string."""
+    if hotkey_config is None:
+        return "Ctrl+Shift+Space"
+    
+    parts = [mod.capitalize() for mod in hotkey_config.get("modifiers", [])]
+    key = hotkey_config.get("key", "space")
+    parts.append(key.capitalize() if len(key) > 1 else key.upper())
+    return "+".join(parts)
+
+
 class Config:
     """Configuration for the speech-to-text app."""
     
-    # Default hotkey: Ctrl+Alt+R
-    HOTKEY = {keyboard.Key.ctrl, keyboard.Key.alt, keyboard.KeyCode.from_char('r')}
+    # These will be set from config file or defaults
+    _config = None
+    _config_path = None
+    _hotkey = None
+    _hotkey_str = None
+    
+    @classmethod
+    def load(cls):
+        """Load configuration from file."""
+        cls._config, cls._config_path = load_config()
+        if cls._config:
+            cls._hotkey = parse_hotkey(cls._config.get("hotkey"))
+            cls._hotkey_str = format_hotkey(cls._config.get("hotkey"))
+        else:
+            cls._hotkey = parse_hotkey(None)
+            cls._hotkey_str = format_hotkey(None)
+    
+    @classmethod
+    @property
+    def HOTKEY(cls):
+        if cls._hotkey is None:
+            cls.load()
+        return cls._hotkey
+    
+    @classmethod
+    def get_hotkey(cls):
+        if cls._hotkey is None:
+            cls.load()
+        return cls._hotkey
+    
+    @classmethod
+    def get_hotkey_str(cls):
+        if cls._hotkey_str is None:
+            cls.load()
+        return cls._hotkey_str
+    
+    @classmethod
+    def get_config_path(cls):
+        if cls._config is None:
+            cls.load()
+        return cls._config_path
     
     # Vosk model path - will be downloaded to ~/.local/share/vosk-models
+    @classmethod
+    def get_model_path(cls):
+        if cls._config and cls._config.get("model_path"):
+            return Path(cls._config["model_path"])
+        return Path.home() / ".local" / "share" / "vosk-models" / "vosk-model-small-en-us-0.15"
+    
     MODEL_PATH = Path.home() / ".local" / "share" / "vosk-models" / "vosk-model-small-en-us-0.15"
     
     # Audio settings
@@ -47,8 +176,24 @@ class Config:
     CHUNK_SIZE = 4000  # Smaller chunks for more responsive streaming
     
     # Streaming mode settings
-    STREAMING_MODE = True  # Set to False for batch transcription
+    @classmethod
+    def get_streaming_mode(cls):
+        if cls._config is None:
+            cls.load()
+        if cls._config:
+            return cls._config.get("streaming_mode", True)
+        return True
+    
+    STREAMING_MODE = True  # Default, will be overridden
     STREAMING_INTERVAL = 0.1  # Seconds between text updates
+    
+    @classmethod
+    def notifications_enabled(cls):
+        if cls._config is None:
+            cls.load()
+        if cls._config:
+            return cls._config.get("notifications", True)
+        return True
     
     # Display server detection
     @staticmethod
@@ -423,7 +568,8 @@ class SpeechToTextApp:
         self.current_keys.add(key)
         
         # Check if hotkey combination is pressed
-        if Config.HOTKEY.issubset(self.current_keys):
+        hotkey = Config.get_hotkey()
+        if hotkey.issubset(self.current_keys):
             if not self.hotkey_pressed:
                 self.hotkey_pressed = True
                 self._toggle_recording()
@@ -436,7 +582,8 @@ class SpeechToTextApp:
             pass
         
         # Reset hotkey state when any key in the combo is released
-        if not Config.HOTKEY.issubset(self.current_keys):
+        hotkey = Config.get_hotkey()
+        if not hotkey.issubset(self.current_keys):
             self.hotkey_pressed = False
     
     def _toggle_recording(self):
@@ -446,7 +593,7 @@ class SpeechToTextApp:
             self.recognizer.is_recording = False
         else:
             # Start recording in a separate thread
-            if Config.STREAMING_MODE:
+            if Config.get_streaming_mode():
                 self.recording_thread = threading.Thread(target=self._stream_and_type)
             else:
                 self.recording_thread = threading.Thread(target=self._record_and_type)
@@ -482,20 +629,30 @@ class SpeechToTextApp:
     
     def run(self):
         """Run the application."""
-        mode_str = "STREAMING (real-time)" if Config.STREAMING_MODE else "BATCH (after recording)"
+        global DAEMON_MODE
         
-        print("=" * 50)
-        print("Speech-to-Text Application")
-        print("=" * 50)
-        print(f"Display Server: {Config.get_display_server()}")
-        print(f"Mode: {mode_str}")
-        print(f"Hotkey: Ctrl+Alt+R")
-        print("-" * 50)
-        print("Press Ctrl+Alt+R to start/stop recording")
-        print("Press Ctrl+C to exit")
-        print("=" * 50)
+        # Load config first
+        Config.load()
         
-        Notifier.send("Speech-to-Text", f"Ready! Mode: {mode_str}")
+        mode_str = "STREAMING (real-time)" if Config.get_streaming_mode() else "BATCH (after recording)"
+        hotkey_str = Config.get_hotkey_str()
+        config_path = Config.get_config_path()
+        
+        if not DAEMON_MODE:
+            print("=" * 50)
+            print("Speech-to-Text Application")
+            print("=" * 50)
+            print(f"Display Server: {Config.get_display_server()}")
+            print(f"Mode: {mode_str}")
+            print(f"Hotkey: {hotkey_str}")
+            if config_path:
+                print(f"Config: {config_path}")
+            print("-" * 50)
+            print(f"Press {hotkey_str} to start/stop recording")
+            print("Press Ctrl+C to exit")
+            print("=" * 50)
+        
+        Notifier.send("Speech-to-Text", f"Ready! Press {hotkey_str}")
         
         try:
             with keyboard.Listener(
@@ -504,17 +661,53 @@ class SpeechToTextApp:
             ) as listener:
                 listener.join()
         except KeyboardInterrupt:
-            print("\nExiting...")
+            if not DAEMON_MODE:
+                print("\nExiting...")
         finally:
             self.recognizer.cleanup()
 
 
 def main():
     """Entry point."""
+    global DAEMON_MODE
+    
+    parser = argparse.ArgumentParser(
+        description="Speech-to-Text with global hotkey support"
+    )
+    parser.add_argument(
+        "--daemon", "-d",
+        action="store_true",
+        help="Run in daemon mode (suppress terminal output)"
+    )
+    parser.add_argument(
+        "--config", "-c",
+        type=str,
+        help="Path to custom config file"
+    )
+    
+    args = parser.parse_args()
+    DAEMON_MODE = args.daemon
+    
+    # If custom config path specified, load it
+    if args.config:
+        config_path = Path(args.config)
+        if config_path.exists():
+            try:
+                with open(config_path) as f:
+                    Config._config = json.load(f)
+                    Config._config_path = config_path
+                    Config._hotkey = parse_hotkey(Config._config.get("hotkey"))
+                    Config._hotkey_str = format_hotkey(Config._config.get("hotkey"))
+            except Exception as e:
+                print(f"Error loading config: {e}")
+                sys.exit(1)
+        else:
+            print(f"Config file not found: {config_path}")
+            sys.exit(1)
+    
     app = SpeechToTextApp()
     app.run()
 
 
 if __name__ == "__main__":
     main()
-

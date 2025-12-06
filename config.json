@@ -1,0 +1,14 @@
+{
+    "hotkey": {
+        "modifiers": [
+            "ctrl",
+            "shift"
+        ],
+        "key": "space",
+        "description": "Press Ctrl+Shift+Space to toggle recording"
+    },
+    "streaming_mode": true,
+    "streaming_interval": 0.1,
+    "model_path": null,
+    "notifications": true
+}

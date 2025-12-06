@@ -1,0 +1,12 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Name=Speech to Text
+Comment=Voice-activated speech-to-text with global hotkey
+Exec=/home/nick/Documents/blazing-plasma-STT/stt-daemon.sh
+Icon=audio-input-microphone
+Terminal=false
+Type=Application
+Categories=Utility;Accessibility;
+Keywords=speech;voice;transcription;dictation;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true

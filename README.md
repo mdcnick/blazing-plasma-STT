@@ -5,10 +5,11 @@ A keyboard-triggered speech-to-text application that transcribes your voice and 
 ## Features
 
 - 🎤 **Offline speech recognition** using Vosk
-- ⌨️ **Global hotkey** (Super+V) to toggle recording
+- ⌨️ **Configurable global hotkey** (default: Ctrl+Shift+Space)
 - 📝 **Auto-insert** transcribed text at cursor position
 - 🔔 **Desktop notifications** for status feedback
 - 🖥️ **X11 and Wayland** support
+- 🚀 **Auto-start on login** (no terminal needed)
 
 ## Installation
 
@@ -24,29 +25,50 @@ The installer will:
 2. Create a Python virtual environment
 3. Install Python dependencies
 4. Download the Vosk speech model (~40MB)
+5. Set up autostart (runs on login)
+6. Create CLI command `speech-to-text`
 
 ## Usage
 
-1. **Start the app:**
-   ```bash
-   ./run.sh
-   ```
+The app starts automatically on login. Just:
 
-2. **Place your cursor** in any text field (terminal, editor, browser, etc.)
+1. **Place your cursor** in any text field
+2. **Press `Ctrl+Shift+Space`** to start recording
+3. **Speak** your text clearly  
+4. **Press `Ctrl+Shift+Space`** again to stop and insert
 
-3. **Press `Super+V`** to start recording
+### Manual Start
 
-4. **Speak** your text clearly
-
-5. **Press `Super+V`** again to stop and insert the transcribed text
+```bash
+speech-to-text          # With terminal output
+speech-to-text --daemon # Silent (no terminal)
+```
 
 ## Configuration
 
-Edit `speech_to_text.py` to customize:
+Edit `~/.config/speech-to-text/config.json` to customize:
 
-- **Hotkey**: Modify `Config.HOTKEY` (default: Super+V)
-- **Audio settings**: Adjust `SAMPLE_RATE` and `CHUNK_SIZE`
-- **Model**: Change `MODEL_PATH` to use a different Vosk model
+```json
+{
+    "hotkey": {
+        "modifiers": ["ctrl", "shift"],
+        "key": "space"
+    },
+    "streaming_mode": true,
+    "notifications": true
+}
+```
+
+### Hotkey Options
+
+**Modifiers**: `ctrl`, `alt`, `shift`, `super` (Meta/Win key)  
+**Keys**: Any letter, `space`, `enter`, `tab`, `esc`, or function keys (`f1`-`f12`)
+
+Examples:
+- `{"modifiers": ["super", "shift"], "key": "s"}` → Super+Shift+S
+- `{"modifiers": ["ctrl", "alt"], "key": "v"}` → Ctrl+Alt+V
+
+Restart the app after changing the hotkey.
 
 ### Using a Different Model
 
@@ -58,40 +80,36 @@ wget https://alphacephei.com/vosk/models/vosk-model-en-us-0.22.zip
 unzip vosk-model-en-us-0.22.zip
 ```
 
-Then update `MODEL_PATH` in the config.
+Then set `"model_path"` in config.json.
+
+## Uninstall
+
+```bash
+./uninstall.sh
+```
 
 ## Troubleshooting
 
-### "Model not found" error
-Run `./install.sh` to download the Vosk model.
-
-### No audio input
-- Check your microphone is connected and working
-- Run `arecord -l` to list audio devices
-- Check PulseAudio/PipeWire settings
-
-### xdotool/ydotool not working
-- **X11**: Install xdotool: `sudo pacman -S xdotool`
-- **Wayland**: Install ydotool: `sudo pacman -S ydotool`
-  - Wayland may require running ydotool daemon: `sudo ydotoold`
-
 ### Hotkey not detected
 - The app requires access to input devices
-- On Wayland, you may need to add your user to the `input` group:
+- On Wayland, add your user to the `input` group:
   ```bash
   sudo usermod -aG input $USER
   # Then log out and back in
   ```
 
+### No audio input
+- Check microphone: `arecord -l`
+- Check PulseAudio/PipeWire settings
+
 ## Dependencies
 
 - Python 3.8+
-- vosk (speech recognition)
-- pyaudio (audio input)
-- pynput (keyboard hotkey)
-- xdotool (X11) or ydotool (Wayland)
-- libnotify (notifications)
+- vosk, pyaudio, pynput
+- xclip (X11) or wl-clipboard (Wayland)
+- libnotify
 
 ## License
 
 MIT License
+

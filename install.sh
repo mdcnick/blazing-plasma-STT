@@ -90,39 +90,95 @@ fi
 
 echo
 
-# Step 4: Create launcher script
-echo "[4/4] Creating launcher script..."
+# Step 4: Create launcher scripts
+echo "[4/6] Creating launcher scripts..."
 
 cat > "$SCRIPT_DIR/run.sh" << 'EOF'
 #!/bin/bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 source venv/bin/activate
-python speech_to_text.py
+python speech_to_text.py "$@"
 EOF
 
 chmod +x "$SCRIPT_DIR/run.sh"
 
-echo "✓ Launcher script created"
+# Create daemon launcher (no terminal output)
+cat > "$SCRIPT_DIR/stt-daemon.sh" << 'EOF'
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+source venv/bin/activate
+exec python speech_to_text.py --daemon
+EOF
+
+chmod +x "$SCRIPT_DIR/stt-daemon.sh"
+
+echo "✓ Launcher scripts created"
+echo
+
+# Step 5: Setup user config
+echo "[5/6] Setting up user configuration..."
+
+CONFIG_DIR="$HOME/.config/speech-to-text"
+mkdir -p "$CONFIG_DIR"
+
+if [ ! -f "$CONFIG_DIR/config.json" ]; then
+    cp "$SCRIPT_DIR/config.json" "$CONFIG_DIR/config.json"
+    echo "✓ Config copied to $CONFIG_DIR/config.json"
+else
+    echo "  Config already exists (kept existing)"
+fi
+
+echo
+
+# Step 6: Setup autostart and CLI access
+echo "[6/6] Setting up system integration..."
+
+# Autostart directory
+mkdir -p "$HOME/.config/autostart"
+
+# Create desktop file with correct path
+cat > "$HOME/.config/autostart/speech-to-text.desktop" << EOF
+[Desktop Entry]
+Name=Speech to Text
+Comment=Voice-activated speech-to-text with global hotkey
+Exec=$SCRIPT_DIR/stt-daemon.sh
+Icon=audio-input-microphone
+Terminal=false
+Type=Application
+Categories=Utility;Accessibility;
+Keywords=speech;voice;transcription;dictation;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
+EOF
+
+echo "✓ Autostart entry created"
+
+# Create CLI symlink
+mkdir -p "$HOME/.local/bin"
+ln -sf "$SCRIPT_DIR/run.sh" "$HOME/.local/bin/speech-to-text"
+echo "✓ CLI command 'speech-to-text' created"
+
 echo
 
 # Done!
-echo "=========================================="
+echo "==========================================="
 echo "Installation complete!"
-echo "=========================================="
+echo "==========================================="
 echo
-echo "To run the application:"
-echo "  cd $SCRIPT_DIR"
-echo "  ./run.sh"
+echo "The app will start automatically on login."
 echo
-echo "Or run directly:"
-echo "  $SCRIPT_DIR/run.sh"
+echo "You can also start it manually:"
+echo "  speech-to-text          # With terminal output"
+echo "  speech-to-text --daemon # Silent (no terminal)"
 echo
-echo "Usage:"
-echo "  1. Press Super+V to start recording"
-echo "  2. Speak your text"
-echo "  3. Press Super+V again to stop and insert text"
+echo "Configure the hotkey by editing:"
+echo "  $CONFIG_DIR/config.json"
 echo
-echo "Note: Make sure your cursor is in a text field before"
-echo "      pressing the hotkey to insert the text there."
-echo "=========================================="
+echo "Current hotkey: Ctrl+Shift+Space"
+echo
+echo "To uninstall, run:"
+echo "  $SCRIPT_DIR/uninstall.sh"
+echo "==========================================="
+
