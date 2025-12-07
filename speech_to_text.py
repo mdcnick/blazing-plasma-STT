@@ -162,6 +162,14 @@ class Config:
             cls.load()
         return cls._config_path
     
+    @classmethod
+    def get_incremental_typing(cls):
+        if cls._config is None:
+            cls.load()
+        if cls._config:
+            return cls._config.get("incremental_typing", True)
+        return True
+
     # Vosk model path - will be downloaded to ~/.local/share/vosk-models
     @classmethod
     def get_model_path(cls):
@@ -601,12 +609,19 @@ class SpeechToTextApp:
     
     def _on_transcription(self, text: str, is_final: bool):
         """Callback for streaming transcription results."""
-        if is_final:
-            print(f"  [FINAL] {text}")
-            self.typer.type_incremental(text, is_final=True)
+        if Config.get_incremental_typing():
+            if is_final:
+                print(f"  [FINAL] {text}")
+                self.typer.type_incremental(text, is_final=True)
+            else:
+                print(f"  [partial] {text}")
+                self.typer.type_incremental(text, is_final=False)
         else:
-            print(f"  [partial] {text}")
-            self.typer.type_incremental(text, is_final=False)
+            if is_final:
+                print(f"  [FINAL] {text}")
+                self.typer.type_text(text + " ")
+            else:
+                print(f"  [partial] {text}") # Still print partials for feedback, but don't type
     
     def _stream_and_type(self):
         """Stream audio, transcribe, and type results in real-time."""
@@ -635,6 +650,7 @@ class SpeechToTextApp:
         Config.load()
         
         mode_str = "STREAMING (real-time)" if Config.get_streaming_mode() else "BATCH (after recording)"
+        incremental_typing_str = "ENABLED" if Config.get_incremental_typing() else "DISABLED (type final only)"
         hotkey_str = Config.get_hotkey_str()
         config_path = Config.get_config_path()
         
@@ -644,6 +660,7 @@ class SpeechToTextApp:
             print("=" * 50)
             print(f"Display Server: {Config.get_display_server()}")
             print(f"Mode: {mode_str}")
+            print(f"Incremental Typing: {incremental_typing_str}")
             print(f"Hotkey: {hotkey_str}")
             if config_path:
                 print(f"Config: {config_path}")
