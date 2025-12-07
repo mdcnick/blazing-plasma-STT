@@ -1,4 +1,4 @@
-# Speech-to-Text for Arch Linux
+# Speech-to-Text for Linux
 
 A keyboard-triggered speech-to-text application that transcribes your voice and inserts the text at your cursor position.
 
